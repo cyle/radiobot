@@ -4,7 +4,7 @@
 
 */
 
-// mmmm lodash
+// mmmm lodash: https://lodash.com/docs
 var _ = require('lodash');
 
 // the offical slack client lib
