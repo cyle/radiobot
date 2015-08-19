@@ -1,0 +1,12 @@
+{
+  "name": "radiobot",
+  "version": "0.0.1",
+  "description": "A bot for controlling a radio station, lol.",
+  "author": {
+    "name": "Cyle Gage"
+  },
+  "dependencies": {
+    "lodash": "^3.10.1",
+    "slack-client": "1.4.0"
+  }
+}
