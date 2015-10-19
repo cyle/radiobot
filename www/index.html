@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>rave radio</title>
+<style>
+* { padding: 0; margin: 0; }
+html, body{
+  height: 100%;
+}
+body {
+    background: black;
+    color: #00ff00;
+    font-family: "Courier New", monospace;
+    font-size: 16px;
+}
+#outside-voices {
+    position: absolute;
+    top: 0;
+    right: 0;
+    z-index: 99;
+    background-color: #000;
+    padding: 0.5em 1em;
+}
+h1 {
+    font-size: 3em;
+    font-weight: normal;
+}
+#player-wrapper {
+    width: 100%;
+    height: 100%;
+}
+#controls > div {
+    float: left;
+    padding-right: 1em;
+}
+.clearfix {
+    float: none;
+    clear: both;
+}
+</style>
+</head>
+<body>
+
+<div id="outside-voices">
+<h1>#HACKDAYRAVEROOM</h1>
+<div id="controls">
+    <div><label><input type="checkbox" id="shuffle-mode-checkbox" /> shuffle?</label></div>
+    <div><input type="button" id="next-button" value="next &raquo;" /></div>
+    <div class="clearfix"></div>
+</div>
+</div>
+
+<div id="player-wrapper"><div id="player"></div></div>
+
+<script src="https://www.youtube.com/iframe_api"></script>
+<!-- <script src="/lodash.min.js"></script> -->
+<script src="/socket.io/socket.io.js"></script>
+<script>
+
+var socket_ready = false;
+var youtube_ready = false;
+var socket = io();
+var player;
+var current_song;
+
+// This function creates an <iframe> (and YouTube player) after the API code downloads.
+function onYouTubeIframeAPIReady() {
+    youtube_ready = true;
+    try_init();
+}
+
+// The API will call this function when the video player is ready.
+function onPlayerReady(event) {
+    event.target.playVideo();
+}
+
+// The API calls this function when the player's state changes.
+//    The function indicates that when playing a video (state=1),
+//    the player should play for six seconds and then stop.
+function onPlayerStateChange(event) {
+    if (event.data == YT.PlayerState.PLAYING) {
+        //console.log('playing!');
+    } else if (event.data == YT.PlayerState.ENDED) {
+        console.log('ended! getting next!');
+        next_song();
+    }
+}
+
+function next_song() {
+    socket.emit('whats next', { just_finished: current_song, playlist: 'hackdayraveroom', shuffle: document.getElementById('shuffle-mode-checkbox').checked });
+}
+
+function stop_video() {
+    player.stopVideo();
+}
+
+socket.on('start', function(starting_song) {
+    current_song = starting_song;
+    socket_ready = true;
+    try_init();
+});
+
+socket.on('play this', function(song) {
+    play_song(song);
+});
+
+function play_song(song) {
+    current_song = song;
+    player.loadVideoById(get_youtube_id(song.link));
+}
+
+function get_youtube_id(youtube_link) {
+    var youtube_regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/ ]{11})/i;
+    return youtube_link.match(youtube_regex)[1];
+}
+
+function try_init() {
+    if (!socket_ready || !youtube_ready) {
+        return;
+    }
+    init();
+}
+
+function init() {
+    var youtubeid = get_youtube_id(current_song.link);
+    player = new YT.Player('player', {
+        height: '100%',
+        width: '100%',
+        videoId: youtubeid,
+        playerVars: {
+            color: 'white'
+        },
+        events: {
+            'onReady': onPlayerReady,
+            'onStateChange': onPlayerStateChange
+        }
+    });
+}
+
+function next_button_click(e) {
+    next_song();
+}
+
+window.onload = function() {
+    document.getElementById('next-button').addEventListener('click', next_button_click);
+}
+
+</script>
+</body>
+</html>
