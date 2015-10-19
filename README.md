@@ -1,5 +1,9 @@
 # Radiobot for Slack
 
+## WARNING
+
+*This is very much not ready. It's in development.*
+
 ## What?
 
 It's a bot to help you set up your own radio station with channels (playlists) and crap. Yay!
