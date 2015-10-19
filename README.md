@@ -41,12 +41,21 @@ Nice.
 
 ... to be written fully, still in dev ...
 
+Examples:
+
+- Add a video to the default playlist: `@radiobot add https://www.youtube.com/watch?v=fB63ztKnGvo`
+- The "default playlist" will be either your personal one if you're DMing him, or the current channel name you're making the request in.
+- Add a video to a specific playlist: `@radiobot add to hackdayraveroom https://www.youtube.com/watch?v=fB63ztKnGvo`
+- Set the info for a link: `@radiobot set https://www.youtube.com/watch?v=fB63ztKnGvo disclosure - omen`
+
+For playback, go to http://box-running-the-bot.com:8080/ and enjoy.
+
 ## Roadmap / todos
 
 - [ ] persistent database storage (mysql? mongodb? whatever?)
-- [ ] web GUI, lol
 - [ ] web GUI: view music library, add/edit/delete/search tracks
 - [ ] web GUI: view channels, add/reorder/delete tracks
 - [ ] web GUI: playback of a channel, or the whole library, whatever
 - [ ] web GUI: channel options: shuffle mode, ordered mode, live mode
-- [ ] namespace `radiobot` for commands as well, i.e. `radiobot add [link]`
+- [x] web GUI, lol
+- [x] namespace `radiobot` for commands as well, i.e. `radiobot add [link]`
