@@ -9,14 +9,14 @@ var fs = require('fs');
 var _ = require('lodash'); // mmmm lodash: https://lodash.com/docs
 var app = require('express')();
 var http = require('http').Server(app);
-var io = require('socket.io')(http);
+var io = require('socket.io')(http); // socket.io docs: http://socket.io/docs/
 
 // the offical slack client lib
 var slack_client = require('slack-client');
 var Message = require('./node_modules/slack-client/src/message');
 
 // check for a config file when calling this script, we need it
-if (process.argv.length < 3 || process.argv[2] == undefined) {
+if (process.argv.length < 3 || process.argv[2] === undefined) {
 	console.log('testbot requires a config file passed to it, please see README.');
 	process.exit(1);
 }
@@ -27,9 +27,15 @@ var config = require(process.argv[2]);
 
 // primary bot config
 var bot_name = config.bot_name;
+var app_url = config.app_url;
 var backup_db_filename = bot_name + '-backup.json';
 var selfcheck_regex = new RegExp('^@?'+bot_name+':?', 'i');
 var selfcheck_regex2; // will be filled later
+
+// music stuff
+var current_song; // undefined for now
+
+// holds all the music
 var music_library = [
 	{ artist: "disclosure", song: "omen", link: "https://www.youtube.com/watch?v=fB63ztKnGvo" },
 	{ artist: "disclosure", song: "hourglass", link: "https://www.youtube.com/watch?v=m2z8Caoww44" },
@@ -37,6 +43,8 @@ var music_library = [
 	{ artist: "disclosure", song: "holding on", link: "https://www.youtube.com/watch?v=gVN6FqPpChQ" },
 	{ artist: "battles", song: "the yabba", link: "https://www.youtube.com/watch?v=bkhLzHuUYmo" }
 ];
+
+// holds all the channels
 var music_channels = {
 	'hackdayraveroom': [
 		"https://www.youtube.com/watch?v=bkhLzHuUYmo",
@@ -47,6 +55,10 @@ var music_channels = {
 	]
 };
 
+// useful regexes
+var slack_link_regex = /^<(.+)>$/i;
+var artist_songname_regex = /^(.+) - (.+)$/i;
+
 // save everything to backup file
 function save_everything() {
 	var everything = {};
@@ -54,6 +66,7 @@ function save_everything() {
 	everything.channels = music_channels;
 	var everything_string = JSON.stringify(everything);
 	fs.writeFile(backup_db_filename, everything_string, function(err) {
+		console.info(new Date());
 		if (err) {
 			console.error('error saving backup db: ', err);
 		} else {
@@ -120,7 +133,7 @@ slack.on('message', function(message) {
 		}
 
 		// if there is no user, then it's probably not something we need to worry about
-		if (message.user == undefined) {
+		if (message.user === undefined) {
 			return;
 		}
 
@@ -196,20 +209,20 @@ function parse_message(message_obj, user, message_type) {
 	var username = user.name;
 
 	var chatline = message_obj.text.trim();
-	
+
 	// only check messages that start with bot's name
 	if (selfcheck_regex.test(chatline) === false && selfcheck_regex2.test(chatline) === false) {
 		return;
 	}
-	
+
 	// strip out bot's name
 	chatline = chatline.replace(selfcheck_regex, '').replace(selfcheck_regex2, '').trim();
-	
+
 	// fetch channel/group/dm object
 	var where = slack.getChannelGroupOrDMByID(message_obj.channel);
 	// console.log(where);
 	// where has .id and .name, if needed
-	
+
 	if (/(gimme|give me) one of mine/i.test(chatline)) {
 		// return a random song from the user's channel?
 		if (music_channels[username] === undefined) {
@@ -220,6 +233,7 @@ function parse_message(message_obj, user, message_type) {
 		}
 		return;
 	}
+
 	if (/(gimme|give me) one/i.test(chatline)) {
 		// return a random song from the whole library?
 		if (music_library.length === 0) {
@@ -230,33 +244,117 @@ function parse_message(message_obj, user, message_type) {
 		}
 		return;
 	}
-	
+
+	if (/^(link|url)/i.test(chatline)) {
+		say('View here: ' + app_url, where);
+		return;
+	}
+
+	if (/^next/i.test(chatline)) {
+		var from_where;
+		if (message_type === 'dm') {
+			from_where = username;
+		} else {
+			from_where = where.name;
+		}
+		var song_to_send = get_next_song(current_song, from_where, false);
+		say('NEXT!', where);
+		play_now(song_to_send);
+		return;
+	}
+
+	if (/^shuffle/i.test(chatline)) {
+		var from_where;
+		if (message_type === 'dm') {
+			from_where = username;
+		} else {
+			from_where = where.name;
+		}
+		var song_to_send = get_next_song(current_song, from_where, true);
+		say('SHUFFLING!', where);
+		play_now(song_to_send);
+		return;
+	}
+
+	var remove_check = /^remove (.+)$/i;
+	if (remove_check.test(chatline)) {
+		var remove_matches = chatline.match(remove_check);
+		console.log('new remove request: ', remove_matches);
+		var slack_link_matches = remove_matches[1].trim().match(slack_link_regex);
+		var links = slack_link_matches[1].trim().split("|");
+		var the_link = links[0];
+		console.log('the what to remove is a link: ' + the_link);
+		remove_song_by_link(the_link);
+		say('Deleted!', where);
+		return;
+	}
+
+	if (/^save/i.test(chatline)) {
+		save_everything();
+		say('Saved everything nice and tight.', where);
+		return;
+	}
+
+	// play right now
+	var play_now_check = /^play (.+)$/i;
+	if (play_now_check.test(chatline)) {
+		var play_now_matches = chatline.match(play_now_check);
+		console.log('play now check: ', play_now_matches);
+		var play_what = play_now_matches[1].trim();
+
+		var slack_link_matches = play_what.match(slack_link_regex);
+		var links = slack_link_matches[1].trim().split("|");
+		var the_link = links[0];
+		console.log('the what to play now is a link: ' + the_link);
+		if (get_youtube_id(the_link) === undefined) {
+			console.log('the link is not youtube! aborting!');
+			return false;
+		}
+
+		var add_where;
+		if (message_type === 'dm') {
+			add_where = username;
+		} else {
+			add_where = where.name;
+		}
+		console.log('adding "'+the_link+'" to '+add_where);
+
+		var add_result = add_to_channel(play_what, add_where); // this does its own re-parsing of the link
+		if (add_result) {
+			say('Added that to the "'+add_where+'" channel!', where);
+			play_now(the_link); // should be a working link
+		} else {
+			say('Could not add that to the "'+add_where+'" channel for some reason... can\'t play it then...', where);
+		}
+		return;
+	}
+
 	// add to a specific playlist
 	var radio_add_to_channel_check = /^add to ([-_a-z0-9]+) (.+)$/i;
 	if (radio_add_to_channel_check.test(chatline)) {
 		var radio_add_to_channel_matches = chatline.match(radio_add_to_channel_check);
-		console.log('radio add to channel request: ', radio_add_to_channel_matches);
-		
+		console.log('add to channel request: ', radio_add_to_channel_matches);
+
 		var radio_channel = radio_add_to_channel_matches[1].trim();
 		var add_what = radio_add_to_channel_matches[2].trim();
 		console.log('adding "'+add_what+'" to '+radio_channel);
-		
+
 		var add_result = add_to_channel(add_what, radio_channel);
 		if (add_result) {
 			say('Added that to the "'+radio_channel+'" channel!', where);
 		} else {
 			say('Could not add that to the "'+radio_channel+'" channel for some reason...', where);
 		}
-		
+
 		return;
 	}
-	
+
 	// add to channel's playlist or user's, depending
 	var radio_add_general_check = /^add (.+)$/i;
 	if (radio_add_general_check.test(chatline)) {
 		var radio_add_general_matches = chatline.match(radio_add_general_check);
 		console.log('radio general add request: ', radio_add_general_matches);
-		
+
 		var add_what = radio_add_general_matches[1].trim();
 		var add_where;
 		if (message_type === 'dm') {
@@ -265,35 +363,42 @@ function parse_message(message_obj, user, message_type) {
 			add_where = where.name;
 		}
 		console.log('adding "'+add_what+'" to '+add_where);
-		
+
 		var add_result = add_to_channel(add_what, add_where);
 		if (add_result) {
 			say('Added that to the "'+add_where+'" channel!', where);
 		} else {
 			say('Could not add that to the "'+add_where+'" channel for some reason...', where);
 		}
-		
+
 		return;
 	}
-	
+
 	var radio_set_check = /^set <(.+)> (.+) - (.+)$/i;
 	if (radio_set_check.test(chatline)) {
 		var radio_set_matches = chatline.match(radio_set_check);
 		console.log('setting something: ', radio_set_matches);
-		
+
 		var set_result = add_to_library(radio_set_matches[2].trim(), radio_set_matches[3].trim(), radio_set_matches[1].trim());
 		if (set_result) {
 			say('Added that to the library, thanks!', where);
 		} else {
 			say('Could not add to the library for some reason. Check your syntax, maybe.', where);
 		}
-		
+
 		return;
 	}
-	
+
 	var radio_help_check = /^(help)?/i;
 	if (radio_help_check.test(chatline)) {
-		say('Radio options:'+"\n"+'`add (to [radio-station]) [link or artist - song name]` (adds to your user\'s radio station if a `to` is not given)'+"\n"+'`set [link] [artist] - [song name]` to add something to the library for easier use later', where);
+		say('Radio options:' + "\n" +
+		    '`add (to [radio-station]) [link or artist - song name]` (adds to your user\'s radio station if a `to` is not given)' + "\n" +
+			'`set [link] [artist] - [song name]` to add something to the library for easier use later' + "\n" +
+			'`play [link]` to play something right now' + "\n" +
+			'`remove [link]` to remove a link from everywhere' + "\n" +
+			'`next` and `shuffle` do what you would expect' + "\n" +
+			'`link` to get to where you can watch! I control it, btw.',
+			where);
 		return;
 	}
 
@@ -324,15 +429,12 @@ function add_to_channel(what, where) {
 	if (what === undefined || where === undefined) {
 		return false;
 	}
-	
+
 	// make the channel if it doesn't exist
 	if (music_channels[where] === undefined) {
 		music_channels[where] = [];
 	}
-	
-	var slack_link_regex = /^<(.+)>$/i;
-	var artist_songname_regex = /^(.+) - (.+)$/i;
-	
+
 	// first test to see if it's just a link they want to add
 	if (slack_link_regex.test(what)) {
 		var slack_link_matches = what.match(slack_link_regex);
@@ -365,10 +467,107 @@ function add_to_channel(what, where) {
 		console.log('the what is NOT a link or in "artist - song name" format!');
 		return false;
 	}
-	
+
 	console.log('updated channel "'+where+'":', music_channels[where]);
-	
+
 	return true;
+}
+
+// helper function to send along a song object to everyone to play NOW
+function play_now(the_song) {
+	var song_to_send;
+	if (the_song === undefined) {
+		return false;
+	} else if (the_song instanceof Object) {
+		song_to_send = the_song;
+	} else {
+		// assume the input is a link
+		song_to_send = get_song_object_from_link(the_song);
+		if (song_to_send === undefined) {
+			return false; // wasn't a valid link!
+		}
+	}
+	current_song = song_to_send;
+	console.log('sending along to everyone: ', song_to_send);
+	io.emit('play this', song_to_send);
+}
+
+// helper to get a song object from the music library given a certain link
+function get_song_object_from_link(the_link) {
+	var link_index;
+	_.forEach(music_library, function(wat, index) {
+		if (wat.link === the_link) {
+			link_index = index;
+			return;
+		}
+	});
+	return (link_index === undefined) ? undefined : music_library[link_index];
+}
+
+// helper to get the next song
+// if no playlist is given, then assume music library instead
+function get_next_song(song_just_finished, playlist, shuffle) {
+	if (shuffle === undefined) {
+		shuffle = false; // default
+	}
+	var song;
+	if (playlist !== undefined && music_channels[playlist] !== undefined) {
+		console.log('getting next song in playlist ' + playlist);
+		// load from given playlist
+		if (shuffle === true) {
+			console.log('shuffling');
+			var random_link_from_playlist = random_from_array(music_channels[playlist]);
+			song = get_song_object_from_link(random_link_from_playlist);
+		} else {
+			console.log('playing next in playlist');
+			var current_index_in_playlist = _.indexOf(music_channels[playlist], song_just_finished.link);
+			console.log('current index in playlist: ', current_index_in_playlist);
+			var next_link_in_playlist = music_channels[playlist][current_index_in_playlist + 1];
+			if (next_link_in_playlist === undefined) {
+				next_link_in_playlist = music_channels[playlist][0]; // go back to start
+			}
+			console.log('next link in playlist is: ' + next_link_in_playlist);
+			_.forEach(music_library, function(wat, index) {
+				if (wat.link === next_link_in_playlist) {
+					song = wat;
+					return;
+				}
+			});
+		}
+	} else {
+		// load from library, not playlist
+		if (shuffle === true) {
+			song = random_from_array(music_library);
+		} else {
+			var next_index = 0;
+			_.forEach(music_library, function(wat, index) {
+				if (wat.link === just_finished.link) {
+					next_index = index + 1;
+					return;
+				}
+			});
+			song = music_library[next_index];
+		}
+	}
+	return song;
+}
+
+// helper to remove a song by link
+function remove_song_by_link(the_link) {
+	var i = music_library.length;
+	while (i--) {
+		if (music_library[i].link == the_link) {
+			music_library.splice(i, 1);
+		}
+	}
+	for (var playlist in music_channels) {
+		var j = music_channels[playlist].length;
+		while (j--) {
+			if (music_channels[playlist][j] == the_link) {
+				music_channels[playlist].splice(j, 1);
+			}
+		}
+	}
 }
 
 // set up web application
@@ -381,71 +580,26 @@ slack.login();
 
 // socket.io handlers
 io.on('connection', function(socket) {
-	console.log('a user connected');
+	console.log('a user connected!');
 	socket.on('disconnect', function(){
-		console.log('user disconnected');
+		console.log('user disconnected...');
 	});
 	//socket.emit('start', random_from_array(music_library));
 	//socket.emit('start', music_library[0]);
-	socket.emit('start', music_library[4])
+	if (current_song === undefined) {
+		current_song = music_library[3]; // start here if nothing else!
+	}
+	socket.emit('start', current_song);
 	socket.on('whats next', function(msg) {
 		console.log('whats next request: ', msg);
-		var song_to_send;
-		
-		if (msg.playlist !== undefined && music_channels[msg.playlist] !== undefined) {
-			console.log('using playlist ' + msg.playlist);
-			// load from given playlist
-			if (msg.shuffle === true) {
-				console.log('shuffling');
-				var random_link_from_playlist = random_from_array(music_channels[msg.playlist]);
-				var link_index = 0;
-				_.forEach(music_library, function(wat, index) {
-					if (wat.link === random_link_from_playlist) {
-						link_index = index;
-						return;
-					}
-				});
-				song_to_send = music_library[link_index];
-			} else {
-				console.log('playing next in playlist');
-				var current_index_in_playlist = _.indexOf(music_channels[msg.playlist], msg.just_finished.link);
-				console.log('current index: ', current_index_in_playlist);
-				var next_link_in_playlist = music_channels[msg.playlist][current_index_in_playlist + 1];
-				if (next_link_in_playlist === undefined) {
-					next_link_in_playlist = music_channels[msg.playlist][0];
-				}
-				console.log('next link is: ' + next_link_in_playlist);
-				_.forEach(music_library, function(wat, index) {
-					if (wat.link === next_link_in_playlist) {
-						song_to_send = wat;
-						return;
-					}
-				});
-			}
-		} else {
-			// load from library
-			if (msg.shuffle === true) {
-				song_to_send = random_from_array(music_library);
-			} else {
-				var next_index = 0;
-				_.forEach(music_library, function(wat, index) {
-					if (wat.link === msg.just_finished.link) {
-						next_index = index + 1;
-						return;
-					}
-				});
-				song_to_send = music_library[next_index];
-			}
-		}
-		
-		console.log('sending along: ', song_to_send);
-		socket.emit('play this', song_to_send);
+		var song_to_send = get_next_song(msg.just_finished, msg.playlist, msg.shuffle);
+		play_now(song_to_send);
 	});
 });
 
 // web server
 http.listen(8080, function(){
-	console.log('listening on *:8080');
+	console.log('Web server listening on *:8080');
 });
 
 // save current library + channels to a backup file every minute
