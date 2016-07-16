@@ -10,9 +10,9 @@ It's a bot to help you set up your own radio station with channels (playlists) a
 
 ## Installation
 
-### Bot API Key
+### Bot Slack API Key
 
-You need an API key for your bot.
+You need a Slack API key for your bot.
 
 Go to your Slack instance, go to Integrations, then Bot integrations, and make a new one.
 
@@ -41,6 +41,8 @@ You can also use this with Docker! Update the `Dockerfile` with your email addre
 
 Nice.
 
+Note: this bot makes library/playlist backups to JSON files for persistence, and that won't really work if you are using docker.
+
 ## Usage
 
 ... to be written fully, still in dev ...
@@ -48,14 +50,16 @@ Nice.
 Examples:
 
 - Add a video to the default playlist: `@radiobot add https://www.youtube.com/watch?v=fB63ztKnGvo`
-- The "default playlist" will be either your personal one if you're DMing him, or the current channel name you're making the request in.
-- Add a video to a specific playlist: `@radiobot add to hackdayraveroom https://www.youtube.com/watch?v=fB63ztKnGvo`
 - Set the info for a link: `@radiobot set https://www.youtube.com/watch?v=fB63ztKnGvo disclosure - omen`
 
 For playback, go to http://box-running-the-bot.com:8080/ and enjoy.
 
 ## Roadmap / todos
 
+- [ ] support for more than just YouTube:
+- [ ] add support for Vimeo
+- [ ] add support for mp3 links
+- [ ] add support for mp4/mov links
 - [ ] persistent database storage (mysql? mongodb? whatever?)
 - [ ] web GUI: view music library, add/edit/delete/search tracks
 - [ ] web GUI: view channels, add/reorder/delete tracks
