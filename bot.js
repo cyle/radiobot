@@ -223,6 +223,11 @@ function parse_message(message_obj, user, message_type) {
 	// console.log(where);
 	// where has .id and .name, if needed
 
+	if (where.name !== 'hackdayraveroom') {
+		say('NOPE.', where);
+		return;
+	}
+
 	if (/(gimme|give me) one of mine/i.test(chatline)) {
 		// return a random song from the user's channel?
 		if (music_channels[username] === undefined) {
@@ -303,6 +308,9 @@ function parse_message(message_obj, user, message_type) {
 		var play_what = play_now_matches[1].trim();
 
 		var slack_link_matches = play_what.match(slack_link_regex);
+		if (slack_link_matches.length < 2) {
+			return false;
+		}
 		var links = slack_link_matches[1].trim().split("|");
 		var the_link = links[0];
 		console.log('the what to play now is a link: ' + the_link);
