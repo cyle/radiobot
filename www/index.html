@@ -46,6 +46,7 @@ h1 {
 <h1>#HACKDAYRAVEROOM</h1>
 <div id="controls">
     <div><label><input type="checkbox" id="shuffle-mode-checkbox" /> shuffle?</label></div>
+    <div><label><input type="password" id="control-password" /> control password?</label></div>
     <div><input type="button" id="next-button" value="next &raquo;" /></div>
     <div class="clearfix"></div>
 </div>
@@ -88,7 +89,10 @@ function onPlayerStateChange(event) {
 }
 
 function next_song() {
-    socket.emit('whats next', { just_finished: current_song, playlist: 'hackdayraveroom', shuffle: document.getElementById('shuffle-mode-checkbox').checked });
+    socket.emit('whats next', {
+        shared_control_password: document.getElementById('control-password').value,
+        shuffle: document.getElementById('shuffle-mode-checkbox').checked,
+    });
 }
 
 function stop_video() {
@@ -107,6 +111,7 @@ socket.on('play this', function(song) {
 
 function play_song(song) {
     current_song = song;
+    console.log('play song: ', current_song);
     player.loadVideoById(get_youtube_id(song.link));
 }
 
